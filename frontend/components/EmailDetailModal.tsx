@@ -11,7 +11,7 @@ interface EmailDetailModalProps {
 }
 
 export function EmailDetailModal({ email, onClose }: EmailDetailModalProps) {
-  const { starredIds, toggleStar } = useEmails();
+  const { starredIds, toggleStar, archiveEmail } = useEmails();
 
   if (!email) return null;
 
@@ -29,7 +29,7 @@ export function EmailDetailModal({ email, onClose }: EmailDetailModalProps) {
   const initial = (senderName.charAt(0) || 'A').toUpperCase();
 
   const handleArchive = () => {
-    toast.success('Email archived');
+    archiveEmail(email.id);
     onClose();
   };
 

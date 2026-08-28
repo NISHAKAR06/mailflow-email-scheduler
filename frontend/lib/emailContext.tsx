@@ -8,13 +8,18 @@ import toast from 'react-hot-toast';
 export interface EmailContextType {
   scheduledEmails: ScheduledEmailItem[];
   sentEmails: ScheduledEmailItem[];
+  archivedEmails: ScheduledEmailItem[];
   scheduledCount: number;
   sentCount: number;
+  archivedCount: number;
   loading: boolean;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   starredIds: Set<string>;
   toggleStar: (id: string, e?: React.MouseEvent) => void;
+  archivedIds: Set<string>;
+  archiveEmail: (id: string, e?: React.MouseEvent) => void;
+  unarchiveEmail: (id: string, e?: React.MouseEvent) => void;
   scheduleNewCampaign: (params: {
     recipients: string[];
     subject: string;
@@ -33,12 +38,11 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
   const senderId = (session as any)?.user?.senderId || session?.user?.email;
   const backendToken = (session as any)?.backendToken;
 
-  const [scheduledEmails, setScheduledEmails] = useState<ScheduledEmailItem[]>([]);
-  const [sentEmails, setSentEmails] = useState<ScheduledEmailItem[]>([]);
-  const [scheduledCount, setScheduledCount] = useState(0);
-  const [sentCount, setSentCount] = useState(0);
+  const [rawScheduled, setRawScheduled] = useState<ScheduledEmailItem[]>([]);
+  const [rawSent, setRawSent] = useState<ScheduledEmailItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
   const [starredIds, setStarredIds] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -49,7 +53,17 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
     return new Set<string>();
   });
 
-  // Persist starred state locally
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('mailflow_archived_ids');
+        if (saved) return new Set(JSON.parse(saved));
+      } catch {}
+    }
+    return new Set<string>();
+  });
+
+  // Persist starred and archived states
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -57,6 +71,14 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
   }, [starredIds]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('mailflow_archived_ids', JSON.stringify(Array.from(archivedIds)));
+      } catch {}
+    }
+  }, [archivedIds]);
 
   const toggleStar = useCallback((id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -73,6 +95,26 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const archiveEmail = useCallback((id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    toast.success('Email archived', { duration: 1500 });
+  }, []);
+
+  const unarchiveEmail = useCallback((id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    toast.success('Email restored from archive', { duration: 1500 });
+  }, []);
+
   // Fetch real data from backend API
   const fetchEmails = useCallback(
     async (showLoading = false) => {
@@ -84,20 +126,16 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
           const searchRes = await api.searchEmails(searchQuery.trim(), backendToken, 1, 50);
           const sched = searchRes.data.filter((e) => e.status === 'pending');
           const sent = searchRes.data.filter((e) => e.status === 'sent' || e.status === 'failed');
-          setScheduledEmails(sched);
-          setSentEmails(sent);
-          setScheduledCount(sched.length);
-          setSentCount(sent.length);
+          setRawScheduled(sched);
+          setRawSent(sent);
         } else {
           const [schedRes, sentRes] = await Promise.all([
             api.getScheduledEmails(senderId, backendToken, 1, 50),
             api.getSentEmails(senderId, backendToken, 1, 50),
           ]);
 
-          setScheduledEmails(schedRes.data);
-          setSentEmails(sentRes.data);
-          setScheduledCount(schedRes.pagination.total);
-          setSentCount(sentRes.pagination.total);
+          setRawScheduled(schedRes.data);
+          setRawSent(sentRes.data);
         }
       } catch {
         // Backend offline / connection refused fallback
@@ -126,6 +164,17 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
     toast.success('Synced with live server');
   }, [fetchEmails]);
 
+  // All raw emails
+  const allEmails = [...rawScheduled, ...rawSent];
+
+  // Filter out archived emails from active views
+  const scheduledEmails = rawScheduled.filter((e) => !archivedIds.has(e.id));
+  const sentEmails = rawSent.filter((e) => !archivedIds.has(e.id));
+  const archivedEmails = allEmails.filter((e) => archivedIds.has(e.id));
+  const scheduledCount = scheduledEmails.length;
+  const sentCount = sentEmails.length;
+  const archivedCount = archivedEmails.length;
+
   // Schedule a new email campaign via real BullMQ delayed jobs
   const scheduleNewCampaign = useCallback(
     async (params: {
@@ -137,7 +186,7 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
       hourlyLimit: number;
     }) => {
       if (!senderId || !backendToken) {
-        throw new Error('Not authenticated. Please sign in with Google first.');
+        throw new Error('Not authenticated. Please sign in first.');
       }
 
       const payload: SchedulePayload = {
@@ -155,14 +204,7 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
         toast.success(result.message || `Scheduled ${result.scheduled} email(s) successfully!`);
         await fetchEmails(true);
       } catch (err: any) {
-        // If backend connection refused, let the user know cleanly
-        if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
-          toast.error(
-            'Backend server not reachable on localhost:4000. Please ensure Docker containers and backend are started.'
-          );
-        } else {
-          toast.error(err.message || 'Error occurred while scheduling');
-        }
+        toast.error(err.message || 'Error occurred while scheduling');
         throw err;
       }
     },
@@ -174,13 +216,18 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
       value={{
         scheduledEmails,
         sentEmails,
+        archivedEmails,
         scheduledCount,
         sentCount,
+        archivedCount,
         loading,
         searchQuery,
         setSearchQuery,
         starredIds,
         toggleStar,
+        archivedIds,
+        archiveEmail,
+        unarchiveEmail,
         scheduleNewCampaign,
         refreshEmails,
       }}

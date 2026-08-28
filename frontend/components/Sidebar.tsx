@@ -13,7 +13,7 @@ interface SidebarProps {
 
 export function Sidebar({ onOpenCompose }: SidebarProps) {
   const { data: session } = useSession();
-  const { scheduledCount, sentCount } = useEmails();
+  const { scheduledCount, sentCount, archivedCount } = useEmails();
   const pathname = usePathname();
   const router = useRouter();
   const [slackConnected, setSlackConnected] = useState(false);
@@ -53,6 +53,7 @@ export function Sidebar({ onOpenCompose }: SidebarProps) {
 
   const isScheduled = pathname.includes('/dashboard/scheduled');
   const isSent = pathname.includes('/dashboard/sent');
+  const isArchived = pathname.includes('/dashboard/archived');
 
   return (
     <aside className="w-64 h-screen bg-white border-r border-slate-100 flex flex-col justify-between p-5 select-none shrink-0">
@@ -197,6 +198,31 @@ export function Sidebar({ onOpenCompose }: SidebarProps) {
             </div>
             <span className={`text-[11px] ${isSent ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
               {sentCount}
+            </span>
+          </button>
+
+          {/* Archived Nav item */}
+          <button
+            onClick={() => router.push('/dashboard/archived')}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-full text-xs transition-colors ${
+              isArchived
+                ? 'bg-emerald-50 text-emerald-900 font-semibold'
+                : 'text-slate-600 hover:bg-slate-50 font-normal'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <svg
+                className={`w-4 h-4 ${isArchived ? 'text-emerald-700' : 'text-slate-400'}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+              <span>Archived</span>
+            </div>
+            <span className={`text-[11px] ${isArchived ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
+              {archivedCount}
             </span>
           </button>
         </div>
