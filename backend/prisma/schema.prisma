@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Sender {
+  id               String             @id @default(cuid())
+  email            String             @unique
+  name             String?
+  scheduledEmails  ScheduledEmail[]
+  slackIntegration SlackIntegration?
+}
+
+model ScheduledEmail {
+  id             String    @id @default(cuid())
+  idempotencyKey String    @unique
+  senderId       String
+  sender         Sender    @relation(fields: [senderId], references: [id])
+  recipient      String
+  subject        String
+  body           String
+  scheduledFor   DateTime
+  status         String    // pending | sent | failed
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([senderId])
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+model RateLimitCounter {
+  id         String @id @default(cuid())
+  senderId   String
+  hourWindow String // e.g. "2026-08-28T14"
+  count      Int    @default(0)
+
+  @@unique([senderId, hourWindow])
+}
+
+model SlackIntegration {
+  id          String   @id @default(cuid())
+  senderId    String   @unique
+  sender      Sender   @relation(fields: [senderId], references: [id])
+  accessToken String
+  webhookUrl  String?
+  connectedAt DateTime @default(now())
+}
