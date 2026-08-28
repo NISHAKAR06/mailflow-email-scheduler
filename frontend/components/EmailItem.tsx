@@ -10,7 +10,7 @@ interface EmailItemProps {
 }
 
 export function EmailItem({ email, onClick }: EmailItemProps) {
-  const { starredIds, toggleStar } = useEmails();
+  const { starredIds, toggleStar, archiveEmail } = useEmails();
   const isStarred = starredIds.has(email.id);
   const isSent = email.status === 'sent';
   const recipientName = email.recipient.split('@')[0];
