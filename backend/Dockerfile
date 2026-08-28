@@ -1,29 +1,45 @@
+# Multi-stage production build for MailFlow Backend
+
+# Stage 1: Build & Compile
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install dependencies
 RUN npm ci
 
-COPY prisma ./prisma
-RUN npx prisma generate
-
+# Copy source code
 COPY tsconfig.json ./
-COPY src ./src
+COPY src ./src/
+
+# Generate Prisma Client & Compile TypeScript
+RUN npx prisma generate
 RUN npm run build
 
-# ── Production ──────────────────────────────────
-FROM node:20-alpine
+# Stage 2: Production Runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+ENV NODE_ENV=production
+ENV PORT=4000
 
+# Copy package files & prisma
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Install production dependencies only
+RUN npm ci --only=production
+RUN npx prisma generate
+
+# Copy compiled JavaScript from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY prisma ./prisma
 
 EXPOSE 4000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+# Push DB schema if needed & run server
+CMD ["sh", "-c", "npx prisma db push && node dist/server.js"]
