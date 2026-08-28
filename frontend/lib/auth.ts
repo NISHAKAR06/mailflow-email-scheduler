@@ -1,14 +1,16 @@
 import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import type { NextAuthOptions } from 'next-auth';
 import jwt from 'jsonwebtoken';
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    // 1. Google OAuth Provider (One-click Google Sign In)
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       httpOptions: {
-        timeout: 30000, // 30s timeout prevents outgoing request timeout errors
+        timeout: 30000,
       },
       authorization: {
         params: {
@@ -16,6 +18,43 @@ export const authOptions: NextAuthOptions = {
           access_type: 'offline',
           response_type: 'code',
         },
+      },
+    }),
+
+    // 2. Email & Password Credentials Provider (Direct Email Login)
+    CredentialsProvider({
+      id: 'credentials',
+      name: 'Email and Password',
+      credentials: {
+        email: { label: 'Email ID', type: 'email', placeholder: 'user@domain.com' },
+        password: { label: 'Password', type: 'password' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email) {
+          throw new Error('Please enter your Email ID');
+        }
+
+        const email = credentials.email.trim().toLowerCase();
+        const name = email.split('@')[0] || 'User';
+
+        // Auto-upsert sender in backend if reachable
+        try {
+          const apiUrl = process.env.INTERNAL_BACKEND_URL || 'http://127.0.0.1:4000';
+          fetch(`${apiUrl}/api/auth/sender`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name }),
+          }).catch(() => {});
+        } catch {
+          // ignore
+        }
+
+        return {
+          id: email,
+          email,
+          name: name.charAt(0).toUpperCase() + name.slice(1),
+          image: null,
+        };
       },
     }),
   ],
@@ -26,9 +65,7 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async redirect({ url, baseUrl }) {
-      // Allows relative callback URLs
       if (url.startsWith('/')) return `${baseUrl}${url}`;
-      // Allows callback URLs on the same origin
       if (new URL(url).origin === baseUrl) return url;
       return `${baseUrl}/dashboard/scheduled`;
     },
@@ -36,9 +73,8 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user }) {
       if (!user?.email) return false;
 
-      // Non-blocking sync with backend database
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+        const apiUrl = process.env.INTERNAL_BACKEND_URL || 'http://127.0.0.1:4000';
         fetch(`${apiUrl}/api/auth/sender`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -48,7 +84,7 @@ export const authOptions: NextAuthOptions = {
           }),
         }).catch(() => {});
       } catch {
-        // Continue even if backend is starting up
+        // Continue
       }
       return true;
     },
@@ -61,10 +97,9 @@ export const authOptions: NextAuthOptions = {
         token.senderId = user.id || user.email;
       }
 
-      // Try to fetch DB senderId from backend
       if (token.email && (!token.senderId || token.senderId === token.email)) {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+          const apiUrl = process.env.INTERNAL_BACKEND_URL || 'http://127.0.0.1:4000';
           const res = await fetch(`${apiUrl}/api/auth/sender`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -92,7 +127,6 @@ export const authOptions: NextAuthOptions = {
         const activeSenderId = token.senderId || (token.email as string) || 'default-sender';
         (session as any).user.senderId = activeSenderId;
 
-        // Sign a production JWT for Express backend API authorization
         const secret = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || 'mailflow_jwt_secret';
         const backendToken = jwt.sign(
           {

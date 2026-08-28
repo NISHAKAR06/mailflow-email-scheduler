@@ -23,9 +23,8 @@ export class RedisManager {
   static getInstance(): Redis {
     if (!RedisManager.instance) {
       RedisManager.instance = new Redis(RedisManager.getConnectionConfig());
-      RedisManager.instance.on('error', (err) => {
-        // Log cleanly without uncaught exception crash
-        if (err.code !== 'ECONNREFUSED') {
+      RedisManager.instance.on('error', (err: any) => {
+        if (err?.code !== 'ECONNREFUSED') {
           console.warn('[Redis] Connection event:', err.message);
         }
       });
@@ -36,8 +35,8 @@ export class RedisManager {
   /** Creates a new connection — BullMQ requires dedicated connections. */
   static createConnection(): Redis {
     const conn = new Redis(RedisManager.getConnectionConfig());
-    conn.on('error', (err) => {
-      if (err.code !== 'ECONNREFUSED') {
+    conn.on('error', (err: any) => {
+      if (err?.code !== 'ECONNREFUSED') {
         console.warn('[Redis Worker] Connection event:', err.message);
       }
     });

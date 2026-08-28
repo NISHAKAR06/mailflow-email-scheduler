@@ -10,7 +10,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
+  const [loadingEmail, setLoadingEmail] = useState(false);
 
   // If already logged in, navigate straight to dashboard
   useEffect(() => {
@@ -19,27 +20,48 @@ export default function LoginPage() {
     }
   }, [status, router]);
 
+  // Option 1: Direct Google Login (No email or password asked)
   const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      await signIn('google', { callbackUrl: '/dashboard/scheduled' });
-    } catch (err: any) {
-      toast.error('Google Sign In failed. Please try again.');
-      setLoading(false);
-    }
-  };
-
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) {
-      toast.error('Please enter your Email ID');
-      return;
-    }
-    setLoading(true);
+    setLoadingGoogle(true);
     try {
       await signIn('google', { callbackUrl: '/dashboard/scheduled' });
     } catch {
-      setLoading(false);
+      toast.error('Google Sign In failed. Please try again.');
+      setLoadingGoogle(false);
+    }
+  };
+
+  // Option 2: Direct Email ID & Password Login (No Google credentials needed)
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      toast.error('Please enter your Email ID');
+      return;
+    }
+    if (!password) {
+      toast.error('Please enter your Password');
+      return;
+    }
+
+    setLoadingEmail(true);
+    try {
+      const res = await signIn('credentials', {
+        email: email.trim(),
+        password,
+        redirect: false,
+        callbackUrl: '/dashboard/scheduled',
+      });
+
+      if (res?.error) {
+        toast.error(res.error || 'Invalid email or password');
+        setLoadingEmail(false);
+      } else if (res?.ok) {
+        toast.success('Signed in successfully');
+        router.push('/dashboard/scheduled');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Login failed. Please try again.');
+      setLoadingEmail(false);
     }
   };
 
@@ -51,10 +73,10 @@ export default function LoginPage() {
           Login
         </h1>
 
-        {/* Google Sign In button with light mint/green pill background */}
+        {/* ── OPTION 1: Google Login (One Click) ── */}
         <button
           onClick={handleGoogleLogin}
-          disabled={loading || status === 'loading'}
+          disabled={loadingGoogle || loadingEmail || status === 'loading'}
           className="w-full flex items-center justify-center gap-2.5 bg-[#EAF7EE] hover:bg-[#DFF1E4] active:scale-[0.99] transition-colors text-slate-700 font-medium text-xs py-3 px-4 rounded-xl mb-6 shadow-none cursor-pointer disabled:opacity-60"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -75,7 +97,7 @@ export default function LoginPage() {
               fill="#EA4335"
             />
           </svg>
-          <span>{loading ? 'Redirecting to Google...' : 'Login with Google'}</span>
+          <span>{loadingGoogle ? 'Redirecting to Google...' : 'Login with Google'}</span>
         </button>
 
         {/* Divider with text */}
@@ -86,7 +108,7 @@ export default function LoginPage() {
           </span>
         </div>
 
-        {/* Email / Password Form matching screenshot styling */}
+        {/* ── OPTION 2: Email & Password Login ── */}
         <form onSubmit={handleEmailLogin} className="space-y-3.5">
           <div>
             <input
@@ -94,6 +116,7 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email ID"
+              required
               className="w-full bg-[#F6F7F9] text-xs text-slate-800 placeholder:text-slate-400 px-4 py-3 rounded-xl border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
             />
           </div>
@@ -104,6 +127,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
+              required
               className="w-full bg-[#F6F7F9] text-xs text-slate-800 placeholder:text-slate-400 px-4 py-3 rounded-xl border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none transition-colors"
             />
           </div>
@@ -111,10 +135,10 @@ export default function LoginPage() {
           <div className="pt-2">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loadingEmail || loadingGoogle}
               className="w-full bg-[#00A854] hover:bg-[#00964B] active:scale-[0.99] text-white text-xs font-semibold py-3 px-4 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
             >
-              Login
+              {loadingEmail ? 'Logging in...' : 'Login'}
             </button>
           </div>
         </form>

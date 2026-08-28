@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { SlackNotifier } from '../lib/slack';
-import { AuthenticatedRequest } from '../middleware/auth';
 
 /**
  * Slack routes: OAuth connect and callback.
@@ -82,8 +81,12 @@ export class SlackRoutes {
       return;
     }
 
-    const connected = await this.slackNotifier.isConnected(senderId);
-    res.json({ connected });
+    try {
+      const connected = await this.slackNotifier.isConnected(senderId);
+      res.json({ connected });
+    } catch {
+      res.json({ connected: false });
+    }
   }
 
   /**
@@ -102,7 +105,6 @@ export class SlackRoutes {
       await this.slackNotifier.disconnect(senderId);
       res.json({ message: 'Slack disconnected' });
     } catch (error: any) {
-      console.error('[SlackRoutes] Disconnect error:', error);
       res.status(500).json({ error: error.message || 'Internal server error' });
     }
   }

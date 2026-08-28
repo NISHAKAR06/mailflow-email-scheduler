@@ -33,23 +33,19 @@ async function main() {
   );
   app.use(express.json({ limit: '10mb' }));
 
-  // ── Start HTTP Server First ───────────────────────
-  const server = app.listen(port, () => {
-    console.log(`[Server] MailFlow backend running on port ${port}`);
-    console.log(`[Server] Bull Board: http://localhost:${port}/admin/queues`);
-    console.log(`[Server] Health check: http://localhost:${port}/api/health`);
-  });
-
   // ── Infrastructure Clients ───────────────────────
   const redis = RedisManager.getInstance();
   const workerConnection = RedisManager.createConnection();
 
-  // ── BullMQ Queue ─────────────────────────────────
+  // ── BullMQ Queue using safe RedisManager connection ──
   const emailQueue = new Queue('email-queue', {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    },
+    connection: redis as any,
+  });
+
+  emailQueue.on('error', (err: any) => {
+    if (err?.code !== 'ECONNREFUSED') {
+      console.warn('[Queue] Event:', err.message);
+    }
   });
 
   // ── Service Classes (OOP, constructor-injected) ──
@@ -146,6 +142,13 @@ async function main() {
   // ── Health Check ─────────────────────────────────
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // ── Start HTTP Server ────────────────────────────
+  const server = app.listen(port, () => {
+    console.log(`[Server] MailFlow backend running on port ${port}`);
+    console.log(`[Server] Bull Board: http://localhost:${port}/admin/queues`);
+    console.log(`[Server] Health check: http://localhost:${port}/api/health`);
   });
 
   // ── Graceful Shutdown ────────────────────────────

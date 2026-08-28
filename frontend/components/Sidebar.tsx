@@ -20,10 +20,10 @@ export function Sidebar({ onOpenCompose }: SidebarProps) {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   const user = session?.user;
-  const senderId = (session as any)?.user?.senderId;
+  const senderId = (session as any)?.user?.senderId || user?.email;
   const backendToken = (session as any)?.backendToken;
 
-  // Real-time Slack status check from backend database
+  // Real-time Slack status check
   useEffect(() => {
     if (!senderId) return;
     api
@@ -37,8 +37,7 @@ export function Sidebar({ onOpenCompose }: SidebarProps) {
       toast.error('Please sign in first');
       return;
     }
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-    window.location.href = `${apiUrl}/api/slack/connect?senderId=${encodeURIComponent(senderId)}`;
+    window.location.href = `/api/backend/slack/connect?senderId=${encodeURIComponent(senderId)}`;
   };
 
   const handleSlackDisconnect = async () => {

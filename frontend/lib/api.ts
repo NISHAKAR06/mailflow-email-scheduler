@@ -1,10 +1,12 @@
 /**
  * Production REST API client for MailFlow Express backend.
- * Uses real runtime endpoints for BullMQ job queue, PostgreSQL (via Prisma),
- * Elasticsearch, and Slack integrations.
+ * Uses Next.js server-side reverse proxy (/api/backend) on port 3000 to seamlessly
+ * route to the Express BullMQ scheduler on port 4000 without CORS or cross-origin connection issues.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_BASE_URL = typeof window !== 'undefined'
+  ? '/api/backend'
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/api');
 
 export interface ScheduledEmailItem {
   id: string;
@@ -50,7 +52,7 @@ export const api = {
     emailIds: string[];
     message: string;
   }> {
-    const res = await fetch(`${API_BASE_URL}/api/emails/schedule`, {
+    const res = await fetch(`${API_BASE_URL}/emails/schedule`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -59,7 +61,7 @@ export const api = {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'Failed to schedule emails');
     }
@@ -76,7 +78,7 @@ export const api = {
     limit = 50
   ): Promise<PaginatedResponse<ScheduledEmailItem>> {
     const res = await fetch(
-      `${API_BASE_URL}/api/emails/scheduled?senderId=${encodeURIComponent(senderId)}&page=${page}&limit=${limit}`,
+      `${API_BASE_URL}/emails/scheduled?senderId=${encodeURIComponent(senderId)}&page=${page}&limit=${limit}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -101,7 +103,7 @@ export const api = {
     limit = 50
   ): Promise<PaginatedResponse<ScheduledEmailItem>> {
     const res = await fetch(
-      `${API_BASE_URL}/api/emails/sent?senderId=${encodeURIComponent(senderId)}&page=${page}&limit=${limit}`,
+      `${API_BASE_URL}/emails/sent?senderId=${encodeURIComponent(senderId)}&page=${page}&limit=${limit}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -126,7 +128,7 @@ export const api = {
     limit = 50
   ): Promise<PaginatedResponse<ScheduledEmailItem>> {
     const res = await fetch(
-      `${API_BASE_URL}/api/emails/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`,
+      `${API_BASE_URL}/emails/search?q=${encodeURIComponent(query)}&page=${page}&limit=${limit}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -145,18 +147,22 @@ export const api = {
    * Check if Slack integration is active for this sender
    */
   async getSlackStatus(senderId: string): Promise<{ connected: boolean }> {
-    const res = await fetch(
-      `${API_BASE_URL}/api/slack/status?senderId=${encodeURIComponent(senderId)}`
-    );
-    if (!res.ok) return { connected: false };
-    return res.json();
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/slack/status?senderId=${encodeURIComponent(senderId)}`
+      );
+      if (!res.ok) return { connected: false };
+      return await res.json();
+    } catch {
+      return { connected: false };
+    }
   },
 
   /**
    * Disconnect Slack integration
    */
   async disconnectSlack(senderId: string, token: string): Promise<void> {
-    const res = await fetch(`${API_BASE_URL}/api/slack/disconnect`, {
+    const res = await fetch(`${API_BASE_URL}/slack/disconnect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

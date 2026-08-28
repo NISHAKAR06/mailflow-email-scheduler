@@ -30,7 +30,7 @@ const EmailContext = createContext<EmailContextType | undefined>(undefined);
 
 export function EmailProvider({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
-  const senderId = (session as any)?.user?.senderId;
+  const senderId = (session as any)?.user?.senderId || session?.user?.email;
   const backendToken = (session as any)?.backendToken;
 
   const [scheduledEmails, setScheduledEmails] = useState<ScheduledEmailItem[]>([]);
@@ -74,45 +74,46 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Fetch real data from backend API
-  const fetchEmails = useCallback(async (showLoading = false) => {
-    if (!senderId || !backendToken) return;
+  const fetchEmails = useCallback(
+    async (showLoading = false) => {
+      if (!senderId || !backendToken) return;
 
-    if (showLoading) setLoading(true);
-    try {
-      if (searchQuery.trim()) {
-        // Elasticsearch query
-        const searchRes = await api.searchEmails(searchQuery.trim(), backendToken, 1, 50);
-        const sched = searchRes.data.filter((e) => e.status === 'pending');
-        const sent = searchRes.data.filter((e) => e.status === 'sent' || e.status === 'failed');
-        setScheduledEmails(sched);
-        setSentEmails(sent);
-        setScheduledCount(sched.length);
-        setSentCount(sent.length);
-      } else {
-        // Standard paginated fetch
-        const [schedRes, sentRes] = await Promise.all([
-          api.getScheduledEmails(senderId, backendToken, 1, 50),
-          api.getSentEmails(senderId, backendToken, 1, 50),
-        ]);
+      if (showLoading) setLoading(true);
+      try {
+        if (searchQuery.trim()) {
+          const searchRes = await api.searchEmails(searchQuery.trim(), backendToken, 1, 50);
+          const sched = searchRes.data.filter((e) => e.status === 'pending');
+          const sent = searchRes.data.filter((e) => e.status === 'sent' || e.status === 'failed');
+          setScheduledEmails(sched);
+          setSentEmails(sent);
+          setScheduledCount(sched.length);
+          setSentCount(sent.length);
+        } else {
+          const [schedRes, sentRes] = await Promise.all([
+            api.getScheduledEmails(senderId, backendToken, 1, 50),
+            api.getSentEmails(senderId, backendToken, 1, 50),
+          ]);
 
-        setScheduledEmails(schedRes.data);
-        setSentEmails(sentRes.data);
-        setScheduledCount(schedRes.pagination.total);
-        setSentCount(sentRes.pagination.total);
+          setScheduledEmails(schedRes.data);
+          setSentEmails(sentRes.data);
+          setScheduledCount(schedRes.pagination.total);
+          setSentCount(sentRes.pagination.total);
+        }
+      } catch {
+        // Backend offline / connection refused fallback
+      } finally {
+        if (showLoading) setLoading(false);
       }
-    } catch (err: any) {
-      console.warn('[EmailContext] Live API sync note:', err.message);
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, [senderId, backendToken, searchQuery]);
+    },
+    [senderId, backendToken, searchQuery]
+  );
 
   // Initial fetch and on search change
   useEffect(() => {
     fetchEmails(true);
   }, [fetchEmails]);
 
-  // Periodic polling every 10 seconds for real-time live status updates
+  // Periodic polling every 10 seconds
   useEffect(() => {
     const timer = setInterval(() => {
       fetchEmails(false);
@@ -136,7 +137,7 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
       hourlyLimit: number;
     }) => {
       if (!senderId || !backendToken) {
-        throw new Error('Not authenticated. Please sign in.');
+        throw new Error('Not authenticated. Please sign in with Google first.');
       }
 
       const payload: SchedulePayload = {
@@ -149,9 +150,21 @@ export function EmailProvider({ children }: { children: React.ReactNode }) {
         hourlyLimit: params.hourlyLimit,
       };
 
-      const result = await api.scheduleEmails(payload, backendToken);
-      toast.success(result.message || `Scheduled ${result.scheduled} email(s) successfully!`);
-      await fetchEmails(true);
+      try {
+        const result = await api.scheduleEmails(payload, backendToken);
+        toast.success(result.message || `Scheduled ${result.scheduled} email(s) successfully!`);
+        await fetchEmails(true);
+      } catch (err: any) {
+        // If backend connection refused, let the user know cleanly
+        if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+          toast.error(
+            'Backend server not reachable on localhost:4000. Please ensure Docker containers and backend are started.'
+          );
+        } else {
+          toast.error(err.message || 'Error occurred while scheduling');
+        }
+        throw err;
+      }
     },
     [senderId, backendToken, fetchEmails]
   );
