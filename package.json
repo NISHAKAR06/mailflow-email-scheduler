@@ -1,0 +1,11 @@
+{
+  "name": "mailflow-monorepo",
+  "version": "1.0.0",
+  "description": "MailFlow Email Scheduler Monorepo Runner",
+  "main": "start-all.js",
+  "scripts": {
+    "build": "npm --prefix backend ci && npx --prefix backend prisma generate && npm --prefix backend run build && npm --prefix frontend ci && npm --prefix frontend run build",
+    "db:push": "npx --prefix backend prisma db push",
+    "start": "npx --prefix backend prisma db push && node start-all.js"
+  }
+}
