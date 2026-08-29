@@ -1,22 +1,38 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const path = require('path');
 
 // Port assignments
 const backendPort = process.env.BACKEND_PORT || '4000';
 const frontendPort = process.env.PORT || '3000'; // Render assigns PORT to the public service
 
-console.log(`[MailFlow Single-Service Runner]`);
-console.log(`- Frontend exposed on PORT: ${frontendPort}`);
-console.log(`- Backend internal on PORT: ${backendPort}`);
+console.log(`===========================================`);
+console.log(`[MailFlow Unified Service Runner]`);
+console.log(`- Frontend Port (Public): ${frontendPort}`);
+console.log(`- Backend Port (Internal): ${backendPort}`);
+console.log(`===========================================`);
 
-// 1. Run Prisma migrations then start Backend
+// 1. Sync database schema with PostgreSQL
+if (process.env.DATABASE_URL) {
+  try {
+    console.log('[Runner] Syncing PostgreSQL schema with Prisma...');
+    execSync('npx prisma db push --skip-generate', {
+      cwd: path.join(__dirname, 'backend'),
+      stdio: 'inherit',
+      env: process.env,
+    });
+    console.log('[Runner] Database schema synced successfully.');
+  } catch (err) {
+    console.warn('[Runner] Warning: Prisma db push encountered an issue, proceeding to start server:', err.message);
+  }
+}
+
+// 2. Spawn Backend (Express API & BullMQ Worker)
 const backendEnv = {
   ...process.env,
   PORT: backendPort,
   NODE_ENV: process.env.NODE_ENV || 'production',
 };
 
-// Spawn Backend
 const backend = spawn(
   'node',
   ['dist/server.js'],
@@ -29,10 +45,14 @@ const backend = spawn(
 );
 
 backend.on('error', (err) => {
-  console.error('[Backend Error]:', err);
+  console.error('[Backend Process Error]:', err);
 });
 
-// 2. Start Frontend (Next.js)
+backend.on('exit', (code, signal) => {
+  console.warn(`[Backend Process Exited] code=${code} signal=${signal}`);
+});
+
+// 3. Spawn Frontend (Next.js)
 const frontendEnv = {
   ...process.env,
   PORT: frontendPort,
@@ -52,10 +72,14 @@ const frontend = spawn(
 );
 
 frontend.on('error', (err) => {
-  console.error('[Frontend Error]:', err);
+  console.error('[Frontend Process Error]:', err);
 });
 
-// Graceful termination
+frontend.on('exit', (code, signal) => {
+  console.warn(`[Frontend Process Exited] code=${code} signal=${signal}`);
+});
+
+// Graceful shutdown
 const handleShutdown = () => {
   console.log('[Runner] Shutting down services...');
   backend.kill('SIGTERM');
