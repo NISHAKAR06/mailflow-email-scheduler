@@ -74,7 +74,13 @@ export class EmailRoutes {
     try {
       const skip = (page - 1) * limit;
       const where: any = { status: 'pending' };
-      if (senderId) where.senderId = senderId;
+      if (senderId) {
+        where.OR = [
+          { senderId: senderId },
+          { sender: { email: senderId } },
+          { sender: { id: senderId } },
+        ];
+      }
 
       const [emails, total] = await Promise.all([
         this.prisma.scheduledEmail.findMany({
@@ -87,20 +93,18 @@ export class EmailRoutes {
         this.prisma.scheduledEmail.count({ where }),
       ]);
 
-      if (emails.length > 0) {
-        res.json({
-          data: emails,
-          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-        });
-        return;
-      }
-    } catch {
-      // ignore DB offline
+      res.json({
+        data: emails,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      });
+      return;
+    } catch (err: any) {
+      console.warn('[EmailRoutes] DB getScheduled query error:', err.message);
     }
 
-    // Fallback to in-memory store
+    // Fallback to in-memory store if DB is offline
     const memEmails = inMemoryStore.filter(
-      (e) => e.status === 'pending' && (!senderId || e.senderId === senderId)
+      (e) => e.status === 'pending' && (!senderId || e.senderId === senderId || e.sender?.email === senderId)
     );
     const start = (page - 1) * limit;
     const paginated = memEmails.slice(start, start + limit);
@@ -127,7 +131,13 @@ export class EmailRoutes {
     try {
       const skip = (page - 1) * limit;
       const where: any = { status: { in: ['sent', 'failed'] } };
-      if (senderId) where.senderId = senderId;
+      if (senderId) {
+        where.OR = [
+          { senderId: senderId },
+          { sender: { email: senderId } },
+          { sender: { id: senderId } },
+        ];
+      }
 
       const [emails, total] = await Promise.all([
         this.prisma.scheduledEmail.findMany({
@@ -140,20 +150,18 @@ export class EmailRoutes {
         this.prisma.scheduledEmail.count({ where }),
       ]);
 
-      if (emails.length > 0) {
-        res.json({
-          data: emails,
-          pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-        });
-        return;
-      }
-    } catch {
-      // ignore DB offline
+      res.json({
+        data: emails,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
+      });
+      return;
+    } catch (err: any) {
+      console.warn('[EmailRoutes] DB getSent query error:', err.message);
     }
 
-    // Fallback to in-memory store
+    // Fallback to in-memory store if DB is offline
     const memEmails = inMemoryStore.filter(
-      (e) => (e.status === 'sent' || e.status === 'failed') && (!senderId || e.senderId === senderId)
+      (e) => (e.status === 'sent' || e.status === 'failed') && (!senderId || e.senderId === senderId || e.sender?.email === senderId)
     );
     const start = (page - 1) * limit;
     const paginated = memEmails.slice(start, start + limit);

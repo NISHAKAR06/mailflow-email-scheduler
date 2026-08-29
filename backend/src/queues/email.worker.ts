@@ -85,6 +85,7 @@ export class EmailWorker {
     // Verify the email record still exists and is pending
     const emailRecord = await this.prisma.scheduledEmail.findUnique({
       where: { id: emailId },
+      include: { sender: true },
     });
 
     if (!emailRecord || emailRecord.status !== 'pending') {
@@ -101,17 +102,24 @@ export class EmailWorker {
       return;
     }
 
-    // Step 2: Send the email via nodemailer/Ethereal
+    // Step 2: Send the email via nodemailer
     try {
+      const fromSenderName = emailRecord.sender?.name || 'MailFlow';
+      const fromSenderEmail = process.env.SMTP_FROM || process.env.SMTP_USER || emailRecord.sender?.email || 'mailflow@ethereal.email';
+      const fromHeader = `"${fromSenderName}" <${fromSenderEmail}>`;
+
       const info = await this.transporter.sendMail({
-        from: `"MailFlow" <mailflow@ethereal.email>`,
+        from: fromHeader,
         to: recipient,
         subject,
         html: body,
       });
 
-      console.log(`[EmailWorker] Email sent to ${recipient} — Message ID: ${info.messageId}`);
-      console.log(`[EmailWorker] Preview URL: ${nodemailer.getTestMessageUrl(info)}`);
+      console.log(`[EmailWorker] Email successfully sent to ${recipient} (From: ${fromHeader}) — Message ID: ${info.messageId}`);
+      const testPreview = nodemailer.getTestMessageUrl(info);
+      if (testPreview) {
+        console.log(`[EmailWorker] Test Preview URL: ${testPreview}`);
+      }
 
       // Step 3: Increment rate counter AFTER successful send
       await this.rateLimiter.increment(senderId);

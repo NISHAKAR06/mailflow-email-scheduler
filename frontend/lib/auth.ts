@@ -92,12 +92,12 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.email = user.email;
-        token.name = user.name;
+        token.name = user.name || (user.email ? user.email.split('@')[0] : 'User');
         token.picture = user.image;
-        token.senderId = user.id || user.email;
+        token.senderId = user.email || 'user';
       }
 
-      if (token.email && (!token.senderId || token.senderId === token.email)) {
+      if (token.email) {
         try {
           const apiUrl = process.env.INTERNAL_BACKEND_URL || 'http://127.0.0.1:4000';
           const res = await fetch(`${apiUrl}/api/auth/sender`, {
@@ -115,7 +115,7 @@ export const authOptions: NextAuthOptions = {
             }
           }
         } catch {
-          // fallback to email
+          token.senderId = token.email;
         }
       }
 

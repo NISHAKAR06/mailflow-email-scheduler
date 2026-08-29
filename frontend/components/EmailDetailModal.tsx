@@ -24,9 +24,14 @@ export function EmailDetailModal({ email, onClose }: EmailDetailModalProps) {
     minute: '2-digit',
   });
 
-  const senderName = email.sender?.name || email.sender?.email?.split('@')[0] || 'Oliver Brown';
-  const senderEmail = email.sender?.email || 'sender@example.com';
-  const initial = (senderName.charAt(0) || 'A').toUpperCase();
+  const rawEmail = email.sender?.email;
+  const isNumeric = (str?: string | null) => !!str && /^\d{10,}$/.test(str);
+  const senderEmail = isNumeric(rawEmail) ? 'Your Account' : (rawEmail || 'mailflow@ethereal.email');
+  const rawName = email.sender?.name;
+  const senderName = isNumeric(rawName)
+    ? (senderEmail.includes('@') ? senderEmail.split('@')[0] : 'You')
+    : (rawName || (senderEmail.includes('@') ? senderEmail.split('@')[0] : 'You'));
+  const initial = (senderName.charAt(0) || 'M').toUpperCase();
 
   const handleArchive = () => {
     archiveEmail(email.id);

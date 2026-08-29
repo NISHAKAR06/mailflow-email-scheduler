@@ -48,31 +48,21 @@ async function main() {
     }
   });
 
-  // ── Service Classes (OOP, constructor-injected) ──
-  const rateLimiter = new RateLimiter(redis);
-  const slackNotifier = new SlackNotifier(prisma);
-  const searchIndexer = new SearchIndexer();
-  const emailScheduler = new EmailScheduler(emailQueue, prisma);
-  const authMiddleware = new AuthMiddleware();
-
-  // ── Initialize Elasticsearch Index ───────────────
-  searchIndexer.initialize().catch((error) => {
-    console.warn('[Server] Elasticsearch not ready — search fallback active:', error.message);
-  });
-
-  // ── Nodemailer Transporter (Ethereal Email) ──────
+  // ── Nodemailer Transporter ────────────────────────
   let transporter: nodemailer.Transporter;
 
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: false,
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: smtpPort,
+      secure: smtpPort === 465, // true for 465, false for 587 / other ports
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
     });
+    console.log(`[Server] Real SMTP Transporter initialized (${process.env.SMTP_HOST || 'smtp.gmail.com'}:${smtpPort}) for ${process.env.SMTP_USER}`);
   } else {
     try {
       const testAccount = await nodemailer.createTestAccount();
@@ -95,6 +85,18 @@ async function main() {
       });
     }
   }
+
+  // ── Service Classes (OOP, constructor-injected) ──
+  const rateLimiter = new RateLimiter(redis);
+  const slackNotifier = new SlackNotifier(prisma);
+  const searchIndexer = new SearchIndexer();
+  const emailScheduler = new EmailScheduler(emailQueue, prisma, transporter);
+  const authMiddleware = new AuthMiddleware();
+
+  // ── Initialize Elasticsearch Index ───────────────
+  searchIndexer.initialize().catch((error) => {
+    console.warn('[Server] Elasticsearch not ready — search fallback active:', error.message);
+  });
 
   // ── BullMQ Worker ────────────────────────────────
   let emailWorker: EmailWorker | null = null;
